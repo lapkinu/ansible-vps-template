@@ -1,0 +1,10 @@
+- name: Bootstrap server
+  hosts: all
+  remote_user: root
+  become: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  roles:
+    - bootstrap
