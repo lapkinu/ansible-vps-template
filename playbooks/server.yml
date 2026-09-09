@@ -9,3 +9,5 @@
   roles:
     - users
     - ssh
+    - firewall
+    - docker
