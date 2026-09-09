@@ -8,3 +8,4 @@
 
   roles:
     - users
+    - ssh
