@@ -1,5 +1,65 @@
-- name: Install nftables
+---
+- name: Install firewall packages
   ansible.builtin.apt:
-    name: nftables
+    name:
+      - iptables
+      - conntrack
+      - nftables
     state: present
     update_cache: true
+
+- name: Install Docker user firewall script
+  ansible.builtin.copy:
+    src: docker-user-firewall.sh
+    dest: /usr/local/sbin/docker-user-firewall.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+
+- name: Install Docker user firewall systemd service
+  ansible.builtin.template:
+    src: docker-user-firewall.service.j2
+    dest: /etc/systemd/system/docker-user-firewall.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable and start Docker user firewall service
+  ansible.builtin.systemd:
+    name: docker-user-firewall.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Deploy nftables configuration
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: '/usr/sbin/nft -c -f %s'
+
+- name: Create nftables systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/nftables.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Configure nftables systemd drop-in
+  ansible.builtin.template:
+    src: nftables.service.d.conf.j2
+    dest: /etc/systemd/system/nftables.service.d/override.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable and start nftables
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+    state: started
+    daemon_reload: true
