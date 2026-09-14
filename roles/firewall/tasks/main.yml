@@ -40,22 +40,12 @@
     group: root
     mode: '0644'
     validate: '/usr/sbin/nft -c -f %s'
+  notify: Reload nftables
 
-- name: Create nftables systemd drop-in directory
+- name: Remove obsolete nftables systemd override
   ansible.builtin.file:
-    path: /etc/systemd/system/nftables.service.d
-    state: directory
-    owner: root
-    group: root
-    mode: '0755'
-
-- name: Configure nftables systemd drop-in
-  ansible.builtin.template:
-    src: nftables.service.d.conf.j2
-    dest: /etc/systemd/system/nftables.service.d/override.conf
-    owner: root
-    group: root
-    mode: '0644'
+    path: /etc/systemd/system/nftables.service.d/override.conf
+    state: absent
 
 - name: Enable and start nftables
   ansible.builtin.systemd:
