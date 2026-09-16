@@ -1,0 +1,8 @@
+
+- name: Configure application
+  hosts: all
+  remote_user: admin
+  become: true
+
+  roles:
+    - application

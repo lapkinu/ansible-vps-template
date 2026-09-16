@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -e
 
 iptables -C DOCKER-USER \
@@ -10,32 +11,30 @@ iptables -A DOCKER-USER \
     --ctstate ESTABLISHED,RELATED \
     -j ACCEPT
 
+{% for interface in docker_bridge_interfaces %}
+iptables -C DOCKER-USER \
+    -i {{ interface }} \
+    -j RETURN 2>/dev/null || \
+iptables -I DOCKER-USER {{ loop.index + 1 }} \
+    -i {{ interface }} \
+    -j RETURN
+
+{% endfor %}
+{% for port in docker_public_tcp_ports %}
 iptables -C DOCKER-USER \
     -p tcp \
     -m conntrack \
     --ctstate NEW \
-    --ctorigdstport 80 \
+    --ctorigdstport {{ port }} \
     -j ACCEPT 2>/dev/null || \
 iptables -A DOCKER-USER \
     -p tcp \
     -m conntrack \
     --ctstate NEW \
-    --ctorigdstport 80 \
+    --ctorigdstport {{ port }} \
     -j ACCEPT
 
-iptables -C DOCKER-USER \
-    -p tcp \
-    -m conntrack \
-    --ctstate NEW \
-    --ctorigdstport 443 \
-    -j ACCEPT 2>/dev/null || \
-iptables -A DOCKER-USER \
-    -p tcp \
-    -m conntrack \
-    --ctstate NEW \
-    --ctorigdstport 443 \
-    -j ACCEPT
-
+{% endfor %}
 iptables -C DOCKER-USER \
     -j DROP 2>/dev/null || \
 iptables -A DOCKER-USER \

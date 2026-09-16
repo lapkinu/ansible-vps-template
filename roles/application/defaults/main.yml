@@ -1,0 +1,5 @@
+
+app_name: myapp
+app_user: deploy
+app_group: deploy
+app_root: "/srv/{{ app_name }}"
