@@ -1,26 +1,3 @@
-- name: Create admin user
-  ansible.builtin.user:
-    name: admin
-    shell: /bin/bash
-    groups: sudo
-    append: true
-    create_home: true
-    state: present
-
-- name: Add SSH key for admin
-  ansible.posix.authorized_key:
-    user: admin
-    key: "{{ admin_ssh_public_key }}"
-    state: present
-
-- name: Allow admin to use sudo without password
-  ansible.builtin.copy:
-    dest: /etc/sudoers.d/admin
-    content: "admin ALL=(ALL) NOPASSWD: ALL\n"
-    owner: root
-    group: root
-    mode: "0440"
-    validate: "/usr/sbin/visudo -cf %s"
 
 - name: Create server users
   ansible.builtin.user:
