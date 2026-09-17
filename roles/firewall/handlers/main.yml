@@ -1,5 +1,12 @@
-
+---
 - name: Reload nftables
   ansible.builtin.systemd:
     name: nftables
     state: reloaded
+
+- name: Restart Docker user firewall
+  ansible.builtin.systemd:
+    name: docker-user-firewall.service
+    state: restarted
+    daemon_reload: true
+    

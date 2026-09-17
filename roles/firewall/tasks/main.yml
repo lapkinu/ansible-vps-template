@@ -14,8 +14,8 @@
     dest: /usr/local/sbin/docker-user-firewall.sh
     owner: root
     group: root
-    mode: '0755'
-
+    mode: "0755"
+  notify: Restart Docker user firewall
 
 - name: Install Docker user firewall systemd service
   ansible.builtin.template:
@@ -23,7 +23,8 @@
     dest: /etc/systemd/system/docker-user-firewall.service
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
+  notify: Restart Docker user firewall
 
 - name: Enable and start Docker user firewall service
   ansible.builtin.systemd:
@@ -32,14 +33,26 @@
     state: started
     daemon_reload: true
 
+- name: Check for legacy nftables table
+  ansible.builtin.command:
+    cmd: /usr/sbin/nft list table inet filter
+  register: legacy_nftables_table
+  changed_when: false
+  failed_when: false
+
+- name: Remove legacy nftables table
+  ansible.builtin.command:
+    cmd: /usr/sbin/nft delete table inet filter
+  when: legacy_nftables_table.rc == 0
+
 - name: Deploy nftables configuration
   ansible.builtin.template:
     src: nftables.conf.j2
     dest: /etc/nftables.conf
     owner: root
     group: root
-    mode: '0644'
-    validate: '/usr/sbin/nft -c -f %s'
+    mode: "0644"
+    validate: "/usr/sbin/nft -c -f %s"
   notify: Reload nftables
 
 - name: Remove obsolete nftables systemd override
@@ -53,3 +66,4 @@
     enabled: true
     state: started
     daemon_reload: true
+    
