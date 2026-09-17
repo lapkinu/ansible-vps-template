@@ -3,22 +3,34 @@
   ansible.builtin.apt:
     name:
       - ca-certificates
-      - curl
     state: present
     update_cache: true
+
+- name: Ensure APT keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
 
 - name: Add Docker GPG key
   ansible.builtin.get_url:
     url: https://download.docker.com/linux/debian/gpg
     dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
     mode: "0644"
 
 - name: Add Docker repository
   ansible.builtin.deb822_repository:
     name: docker
-    types: deb
-    uris: https://download.docker.com/linux/debian
-    suites: "{{ ansible_facts['distribution_release'] }}"
+    types:
+      - deb
+    uris:
+      - https://download.docker.com/linux/debian
+    suites:
+      - "{{ ansible_facts['distribution_release'] }}"
     components:
       - stable
     signed_by: /etc/apt/keyrings/docker.asc
@@ -35,6 +47,28 @@
       - docker-compose-plugin
     state: present
     update_cache: true
+
+- name: Ensure Docker configuration directory exists
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install Docker daemon configuration
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Docker
+
+- name: Validate Docker daemon configuration
+  ansible.builtin.command:
+    cmd: /usr/bin/dockerd --validate --config-file=/etc/docker/daemon.json
+  changed_when: false
 
 - name: Enable and start Docker
   ansible.builtin.systemd:
