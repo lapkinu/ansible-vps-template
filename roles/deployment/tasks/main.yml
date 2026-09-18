@@ -4,6 +4,8 @@
     that:
       - vault_ghcr_token is defined
       - vault_ghcr_token | length > 0
+      - vault_app_secret is defined
+      - vault_app_secret | length > 0
     fail_msg: Required deployment secrets are not configured
     success_msg: Required deployment secrets are available
   no_log: true
@@ -22,6 +24,31 @@
   changed_when: false
   no_log: true
 
+- name: Create deployment configuration directory
+  ansible.builtin.file:
+    path: "{{ deployment_config_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install deployment environment
+  ansible.builtin.template:
+    src: environment.j2
+    dest: "{{ deployment_config_root }}/environment"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install deployment secrets
+  ansible.builtin.template:
+    src: secrets.env.j2
+    dest: "{{ deployment_config_root }}/secrets.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
 - name: Create deployment directory
   ansible.builtin.file:
     path: "{{ deployment_root }}"
@@ -37,3 +64,20 @@
     owner: root
     group: root
     mode: "0644"
+
+- name: Install deployment script
+  ansible.builtin.template:
+    src: deploy-myapp.sh.j2
+    dest: "/usr/local/sbin/deploy-{{ deployment_app_name }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install deployment sudoers policy
+  ansible.builtin.template:
+    src: deploy-myapp.sudoers.j2
+    dest: "/etc/sudoers.d/deploy-{{ deployment_app_name }}"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "/usr/sbin/visudo -cf %s"

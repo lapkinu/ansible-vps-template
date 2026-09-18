@@ -4,3 +4,5 @@ server_users:
   - name: deploy
     shell: /bin/bash
     groups: []
+
+deployment_server_name: dev.myapp.internal  

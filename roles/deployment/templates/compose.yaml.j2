@@ -3,9 +3,9 @@ services:
   php:
     image: ${APP_IMAGE:?APP_IMAGE is required}
     restart: unless-stopped
-    environment:
-      SERVER_NAME: ${SERVER_NAME:?SERVER_NAME is required}
-      APP_SECRET: ${APP_SECRET:?APP_SECRET is required}
+    env_file:
+      - /etc/{{ deployment_app_name }}/environment
+      - /etc/{{ deployment_app_name }}/secrets.env
     volumes:
       - caddy_data:/data
       - caddy_config:/config
@@ -14,12 +14,10 @@ services:
         target: 80
         published: ${HTTP_PORT:-80}
         protocol: tcp
-
       - name: https
         target: 443
         published: ${HTTPS_PORT:-443}
         protocol: tcp
-
       - name: http3
         target: 443
         published: ${HTTP3_PORT:-443}

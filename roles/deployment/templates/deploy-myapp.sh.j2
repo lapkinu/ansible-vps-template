@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+readonly APP_NAME="{{ deployment_app_name }}"
+readonly DEPLOYMENT_ROOT="{{ deployment_root }}"
+readonly CONFIG_ROOT="{{ deployment_config_root }}"
+readonly IMAGE_REPOSITORY="{{ deployment_image_repository }}"
+
+readonly COMPOSE_FILE="${DEPLOYMENT_ROOT}/compose.yaml"
+readonly ENVIRONMENT_FILE="${CONFIG_ROOT}/environment"
+readonly SECRETS_FILE="${CONFIG_ROOT}/secrets.env"
+
+readonly HEALTHCHECK_URL="https://{{ deployment_server_name }}{{ deployment_healthcheck_path }}"
+readonly HEALTHCHECK_ATTEMPTS={{ deployment_healthcheck_attempts }}
+readonly HEALTHCHECK_DELAY={{ deployment_healthcheck_delay }}
+
+if [[ "$#" -ne 1 ]]; then
+    echo "Usage: $0 <commit-sha>" >&2
+    exit 64
+fi
+
+readonly COMMIT_SHA="$1"
+
+if [[ ! "${COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Error: commit SHA must contain exactly 40 lowercase hexadecimal characters." >&2
+    exit 64
+fi
+
+readonly IMAGE="${IMAGE_REPOSITORY}:${COMMIT_SHA}"
+
+echo "Deploying ${APP_NAME}"
+echo "Image: ${IMAGE}"
+
+docker pull "${IMAGE}"
+
+APP_IMAGE="${IMAGE}" \
+docker compose \
+    --env-file "${ENVIRONMENT_FILE}" \
+    --env-file "${SECRETS_FILE}" \
+    --file "${COMPOSE_FILE}" \
+    config --quiet
+
+APP_IMAGE="${IMAGE}" \
+docker compose \
+    --env-file "${ENVIRONMENT_FILE}" \
+    --env-file "${SECRETS_FILE}" \
+    --file "${COMPOSE_FILE}" \
+    up --detach --remove-orphans
+
+echo "Waiting for application health check..."
+
+for ((attempt = 1; attempt <= HEALTHCHECK_ATTEMPTS; attempt++)); do
+    if curl \
+    --insecure \
+    --fail \
+    --silent \
+    --show-error \
+    --output /dev/null \
+    --resolve "{{ deployment_server_name }}:443:127.0.0.1" \
+    "${HEALTHCHECK_URL}"; then
+        echo "Application is healthy: ${HEALTHCHECK_URL}"
+        echo "Deployment completed: ${COMMIT_SHA}"
+        exit 0
+    fi
+
+    echo "Health check ${attempt}/${HEALTHCHECK_ATTEMPTS} failed; retrying..."
+    sleep "${HEALTHCHECK_DELAY}"
+done
+
+echo "Error: application health check failed: ${HEALTHCHECK_URL}" >&2
+
+APP_IMAGE="${IMAGE}" \
+docker compose \
+    --env-file "${ENVIRONMENT_FILE}" \
+    --env-file "${SECRETS_FILE}" \
+    --file "${COMPOSE_FILE}" \
+    ps
+
+exit 1
