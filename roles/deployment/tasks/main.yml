@@ -1,4 +1,27 @@
 ---
+- name: Validate required deployment secrets
+  ansible.builtin.assert:
+    that:
+      - vault_ghcr_token is defined
+      - vault_ghcr_token | length > 0
+    fail_msg: Required deployment secrets are not configured
+    success_msg: Required deployment secrets are available
+  no_log: true
+
+- name: Authenticate Docker to GHCR
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/docker
+      - login
+      - "{{ deployment_registry_url }}"
+      - --username
+      - "{{ deployment_registry_username }}"
+      - --password-stdin
+    stdin: "{{ vault_ghcr_token }}"
+    stdin_add_newline: false
+  changed_when: false
+  no_log: true
+
 - name: Create deployment directory
   ansible.builtin.file:
     path: "{{ deployment_root }}"
