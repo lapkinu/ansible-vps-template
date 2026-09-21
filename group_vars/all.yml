@@ -1,8 +1,18 @@
 admin_ssh_public_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+deploy_ci_ssh_public_key: "{{ lookup('file', '~/.ssh/github-actions-deploy.pub') }}"
 
 server_users:
   - name: deploy
     shell: /bin/bash
     groups: []
 
-deployment_server_name: dev.myapp.internal  
+server_authorized_keys:
+  - user: deploy
+    key: "{{ deploy_ci_ssh_public_key }}"
+    options:
+      - no-agent-forwarding
+      - no-port-forwarding
+      - no-X11-forwarding
+      - no-pty
+
+deployment_server_name: dev.myapp.internal

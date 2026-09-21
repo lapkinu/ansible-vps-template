@@ -8,3 +8,13 @@
     create_home: true
     state: present
   loop: "{{ server_users }}"
+
+- name: Configure user SSH authorized keys
+  ansible.posix.authorized_key:
+    user: "{{ item.user }}"
+    key: "{{ item.key }}"
+    key_options: "{{ item.options | join(',') }}"
+    state: present
+    exclusive: false
+  loop: "{{ server_authorized_keys }}"
+  no_log: true
