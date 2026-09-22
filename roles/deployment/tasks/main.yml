@@ -67,7 +67,7 @@
 
 - name: Install deployment script
   ansible.builtin.template:
-    src: deploy-myapp.sh.j2
+    src: deploy.sh.j2
     dest: "/usr/local/sbin/deploy-{{ deployment_app_name }}"
     owner: root
     group: root
@@ -75,7 +75,7 @@
 
 - name: Install deployment sudoers policy
   ansible.builtin.template:
-    src: deploy-myapp.sudoers.j2
+    src: sudoers.j2
     dest: "/etc/sudoers.d/deploy-{{ deployment_app_name }}"
     owner: root
     group: root
