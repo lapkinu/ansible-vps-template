@@ -1,4 +1,6 @@
 ---
+firewall_ssh_port: 22
+
 docker_public_tcp_ports:
   - 80
   - 443

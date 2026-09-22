@@ -11,6 +11,6 @@ table inet ansible_firewall {
         ip protocol icmp accept
         ip6 nexthdr ipv6-icmp accept
 
-        tcp dport 22 accept
+        tcp dport {{ firewall_ssh_port }} accept
     }
 }
