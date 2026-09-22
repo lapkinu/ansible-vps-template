@@ -1,22 +1,33 @@
+---
+- name: Validate bootstrap configuration
+  ansible.builtin.assert:
+    that:
+      - bootstrap_admin_user | length > 0
+      - bootstrap_admin_shell | length > 0
+      - admin_ssh_public_key | length > 0
+      - admin_ssh_public_key is match('^ssh-')
+    fail_msg: Bootstrap administrator configuration is invalid
+
 - name: Create admin user
   ansible.builtin.user:
-    name: admin
-    shell: /bin/bash
-    groups: sudo
-    append: true
+    name: "{{ bootstrap_admin_user }}"
+    shell: "{{ bootstrap_admin_shell }}"
+    groups:
+      - sudo
+    append: false
     create_home: true
     state: present
 
 - name: Add SSH key for admin
   ansible.posix.authorized_key:
-    user: admin
+    user: "{{ bootstrap_admin_user }}"
     key: "{{ admin_ssh_public_key }}"
     state: present
 
 - name: Allow admin to use sudo without password
   ansible.builtin.copy:
-    dest: /etc/sudoers.d/admin
-    content: "admin ALL=(ALL) NOPASSWD: ALL\n"
+    dest: "/etc/sudoers.d/{{ bootstrap_admin_user }}"
+    content: "{{ bootstrap_admin_user }} ALL=(ALL) NOPASSWD: ALL\n"
     owner: root
     group: root
     mode: "0440"

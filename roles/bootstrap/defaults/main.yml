@@ -1,0 +1,3 @@
+---
+bootstrap_admin_user: admin
+bootstrap_admin_shell: /bin/bash
