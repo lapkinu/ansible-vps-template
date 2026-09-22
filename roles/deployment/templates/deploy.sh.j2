@@ -7,13 +7,114 @@ readonly DEPLOYMENT_ROOT="{{ deployment_root }}"
 readonly CONFIG_ROOT="{{ deployment_config_root }}"
 readonly IMAGE_REPOSITORY="{{ deployment_image_repository }}"
 
-readonly COMPOSE_FILE="${DEPLOYMENT_ROOT}/compose.yaml"
+readonly COMPOSE_CONFIG_FILE="${DEPLOYMENT_ROOT}/compose.yaml"
 readonly ENVIRONMENT_FILE="${CONFIG_ROOT}/environment"
 readonly SECRETS_FILE="${CONFIG_ROOT}/secrets.env"
 
 readonly HEALTHCHECK_URL="https://{{ deployment_server_name }}{{ deployment_healthcheck_path }}"
 readonly HEALTHCHECK_ATTEMPTS={{ deployment_healthcheck_attempts }}
 readonly HEALTHCHECK_DELAY={{ deployment_healthcheck_delay }}
+
+readonly DOCKER="/usr/bin/docker"
+readonly CURL="/usr/bin/curl"
+readonly SLEEP="/usr/bin/sleep"
+readonly FLOCK="/usr/bin/flock"
+
+readonly LOCK_FILE="/run/lock/deploy-${APP_NAME}.lock"
+
+unset \
+    DOCKER_HOST \
+    DOCKER_CONTEXT \
+    DOCKER_CONFIG \
+    COMPOSE_FILE \
+    COMPOSE_PROJECT_NAME \
+    COMPOSE_PROFILES \
+    COMPOSE_ENV_FILES
+
+compose() {
+    local image="$1"
+    shift
+
+    APP_IMAGE="${image}" \
+    "${DOCKER}" compose \
+        --project-name "${APP_NAME}" \
+        --env-file "${ENVIRONMENT_FILE}" \
+        --env-file "${SECRETS_FILE}" \
+        --file "${COMPOSE_CONFIG_FILE}" \
+        "$@"
+}
+
+healthcheck() {
+    local attempt
+
+    for ((attempt = 1; attempt <= HEALTHCHECK_ATTEMPTS; attempt++)); do
+        if "${CURL}" \
+            --insecure \
+            --fail \
+            --silent \
+            --show-error \
+            --output /dev/null \
+            --resolve "{{ deployment_server_name }}:443:127.0.0.1" \
+            "${HEALTHCHECK_URL}"; then
+            return 0
+        fi
+
+        echo "Health check ${attempt}/${HEALTHCHECK_ATTEMPTS} failed; retrying..."
+        "${SLEEP}" "${HEALTHCHECK_DELAY}"
+    done
+
+    return 1
+}
+
+find_current_container() {
+    "${DOCKER}" ps \
+        --filter "label=com.docker.compose.project=${APP_NAME}" \
+        --filter "label=com.docker.compose.service=php" \
+        --format '{{ "{{.ID}}" }}' \
+        | /usr/bin/head --lines=1
+}
+
+rollback() {
+    local previous_image="$1"
+
+    echo "Deployment failed after runtime state was modified." >&2
+
+    if [[ -z "${previous_image}" ]]; then
+        echo "No previous release is available; stopping the failed deployment." >&2
+
+        if ! compose "${IMAGE}" down; then
+            echo "CRITICAL: failed to stop the unsuccessful deployment." >&2
+            return 1
+        fi
+
+        echo "Failed first deployment has been stopped." >&2
+        return 0
+    fi
+
+    echo "Rolling back to previous image: ${previous_image}"
+
+    if ! compose "${previous_image}" up --detach --remove-orphans; then
+        echo "CRITICAL: rollback could not restore the previous release." >&2
+        return 1
+    fi
+
+    echo "Waiting for rollback health check..."
+
+    if ! healthcheck; then
+        echo "CRITICAL: deployment failed and rollback did not restore a healthy application." >&2
+        return 1
+    fi
+
+    echo "Rollback completed successfully: ${previous_image}"
+    return 0
+}
+
+exec 9>"${LOCK_FILE}"
+
+if ! "${FLOCK}" --nonblock 9; then
+    echo "Error: another deployment of ${APP_NAME} is already running." >&2
+    exit 75
+fi
 
 if [[ "$#" -ne 1 ]]; then
     echo "Usage: $0 <commit-sha>" >&2
@@ -27,54 +128,88 @@ if [[ ! "${COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
     exit 64
 fi
 
+if [[ ! -f "${COMPOSE_CONFIG_FILE}" ]]; then
+    echo "Error: Compose file does not exist: ${COMPOSE_CONFIG_FILE}" >&2
+    exit 66
+fi
+
+if [[ ! -f "${ENVIRONMENT_FILE}" ]]; then
+    echo "Error: deployment environment file does not exist: ${ENVIRONMENT_FILE}" >&2
+    exit 66
+fi
+
+if [[ ! -f "${SECRETS_FILE}" ]]; then
+    echo "Error: deployment secrets file does not exist: ${SECRETS_FILE}" >&2
+    exit 66
+fi
+
 readonly IMAGE="${IMAGE_REPOSITORY}:${COMMIT_SHA}"
+
+CURRENT_CONTAINER="$(find_current_container)"
+readonly CURRENT_CONTAINER
+
+PREVIOUS_IMAGE=""
+
+if [[ -n "${CURRENT_CONTAINER}" ]]; then
+    PREVIOUS_IMAGE="$(
+        "${DOCKER}" inspect \
+            --format '{{ "{{.Config.Image}}" }}' \
+            "${CURRENT_CONTAINER}"
+    )"
+fi
+
+readonly PREVIOUS_IMAGE
 
 echo "Deploying ${APP_NAME}"
 echo "Image: ${IMAGE}"
 
-docker pull "${IMAGE}"
+if [[ -n "${PREVIOUS_IMAGE}" ]]; then
+    echo "Current image: ${PREVIOUS_IMAGE}"
+else
+    echo "Current image: none"
+fi
 
-APP_IMAGE="${IMAGE}" \
-docker compose \
-    --env-file "${ENVIRONMENT_FILE}" \
-    --env-file "${SECRETS_FILE}" \
-    --file "${COMPOSE_FILE}" \
-    config --quiet
+#
+# Everything above this point is read-only with respect to the running
+# application. A pull or configuration validation failure must leave the
+# current release untouched.
+#
 
-APP_IMAGE="${IMAGE}" \
-docker compose \
-    --env-file "${ENVIRONMENT_FILE}" \
-    --env-file "${SECRETS_FILE}" \
-    --file "${COMPOSE_FILE}" \
-    up --detach --remove-orphans
+"${DOCKER}" pull "${IMAGE}"
+
+compose "${IMAGE}" config --quiet
+
+#
+# Mutation boundary.
+#
+# From this point onward a failure may have changed the running application,
+# so recovery must be attempted before returning control to the caller.
+#
+
+if ! compose "${IMAGE}" up --detach --remove-orphans; then
+    echo "Error: failed to start the new release." >&2
+
+    if rollback "${PREVIOUS_IMAGE}"; then
+        echo "Deployment failed; previous runtime state was restored." >&2
+    fi
+
+    exit 1
+fi
 
 echo "Waiting for application health check..."
 
-for ((attempt = 1; attempt <= HEALTHCHECK_ATTEMPTS; attempt++)); do
-    if curl \
-    --insecure \
-    --fail \
-    --silent \
-    --show-error \
-    --output /dev/null \
-    --resolve "{{ deployment_server_name }}:443:127.0.0.1" \
-    "${HEALTHCHECK_URL}"; then
-        echo "Application is healthy: ${HEALTHCHECK_URL}"
-        echo "Deployment completed: ${COMMIT_SHA}"
-        exit 0
-    fi
-
-    echo "Health check ${attempt}/${HEALTHCHECK_ATTEMPTS} failed; retrying..."
-    sleep "${HEALTHCHECK_DELAY}"
-done
+if healthcheck; then
+    echo "Application is healthy: ${HEALTHCHECK_URL}"
+    echo "Deployment completed: ${COMMIT_SHA}"
+    exit 0
+fi
 
 echo "Error: application health check failed: ${HEALTHCHECK_URL}" >&2
 
-APP_IMAGE="${IMAGE}" \
-docker compose \
-    --env-file "${ENVIRONMENT_FILE}" \
-    --env-file "${SECRETS_FILE}" \
-    --file "${COMPOSE_FILE}" \
-    ps
+compose "${IMAGE}" ps || true
+
+if rollback "${PREVIOUS_IMAGE}"; then
+    echo "Deployment failed; previous runtime state was restored." >&2
+fi
 
 exit 1
