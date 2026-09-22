@@ -1,37 +1,14 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -e
+set -Eeuo pipefail
 
-iptables -F DOCKER-USER
+readonly RULESET="/etc/iptables/docker-user.rules"
 
-iptables -A DOCKER-USER \
-    -m conntrack \
-    --ctstate ESTABLISHED,RELATED \
-    -j ACCEPT
+/usr/sbin/iptables-restore \
+    --test \
+    --noflush \
+    "${RULESET}"
 
-{% for interface in docker_bridge_interfaces %}
-iptables -A DOCKER-USER \
-    -i {{ interface }} \
-    -j RETURN
-
-{% endfor %}
-{% for port in docker_public_tcp_ports %}
-iptables -A DOCKER-USER \
-    -p tcp \
-    -m conntrack \
-    --ctstate NEW \
-    --ctorigdstport {{ port }} \
-    -j ACCEPT
-
-{% endfor %}
-{% for port in docker_public_udp_ports %}
-iptables -A DOCKER-USER \
-    -p udp \
-    -m conntrack \
-    --ctstate NEW \
-    --ctorigdstport {{ port }} \
-    -j ACCEPT
-
-{% endfor %}
-iptables -A DOCKER-USER \
-    -j DROP
+/usr/sbin/iptables-restore \
+    --noflush \
+    "${RULESET}"
