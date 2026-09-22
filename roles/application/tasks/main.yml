@@ -1,8 +1,0 @@
----
-- name: Create application directory
-  ansible.builtin.file:
-    path: "{{ app_root }}"
-    state: directory
-    owner: "{{ app_owner }}"
-    group: "{{ app_group }}"
-    mode: "0755"

@@ -1,5 +1,0 @@
----
-app_name: myapp
-app_root: "/srv/{{ app_name }}"
-app_owner: root
-app_group: root

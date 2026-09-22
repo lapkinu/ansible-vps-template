@@ -1,11 +1,8 @@
+---
 - name: Configure server
   hosts: all
   remote_user: admin
   become: true
-
-  vars_files:
-    - ../group_vars/all.yml
-    - ../group_vars/vault.yml
 
   roles:
     - users
@@ -13,4 +10,3 @@
     - docker
     - firewall
     - deployment
-    
