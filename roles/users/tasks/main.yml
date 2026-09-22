@@ -1,10 +1,10 @@
-
+---
 - name: Create server users
   ansible.builtin.user:
     name: "{{ item.name }}"
     shell: "{{ item.shell }}"
     groups: "{{ item.groups }}"
-    append: true
+    append: "{{ item.append_groups }}"
     create_home: true
     state: present
   loop: "{{ server_users }}"
