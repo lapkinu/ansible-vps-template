@@ -8,6 +8,13 @@
       - admin_ssh_public_key is match('^ssh-')
     fail_msg: Bootstrap administrator configuration is invalid
 
+- name: Read existing root authorized keys
+  ansible.builtin.slurp:
+    src: /root/.ssh/authorized_keys
+  register: bootstrap_root_authorized_keys
+  failed_when: false
+  changed_when: false
+
 - name: Create admin user
   ansible.builtin.user:
     name: "{{ bootstrap_admin_user }}"
@@ -18,7 +25,24 @@
     create_home: true
     state: present
 
-- name: Add SSH key for admin
+- name: Preserve existing root SSH keys for admin
+  ansible.posix.authorized_key:
+    user: "{{ bootstrap_admin_user }}"
+    key: "{{ item }}"
+    state: present
+  loop: >-
+    {{
+      (bootstrap_root_authorized_keys.content | b64decode).splitlines()
+      | map('trim')
+      | reject('equalto', '')
+      | reject('match', '^#')
+      | list
+    }}
+  when:
+    - bootstrap_root_authorized_keys is succeeded
+    - bootstrap_root_authorized_keys.content is defined
+
+- name: Add Ansible controller SSH key for admin
   ansible.posix.authorized_key:
     user: "{{ bootstrap_admin_user }}"
     key: "{{ admin_ssh_public_key }}"
