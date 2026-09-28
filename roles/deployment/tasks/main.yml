@@ -1,4 +1,22 @@
 ---
+- name: Validate required deployment configuration
+  ansible.builtin.assert:
+    that:
+      - deployment_app_name is defined
+      - deployment_app_name | length > 0
+      - deployment_image_repository is defined
+      - deployment_image_repository | length > 0
+      - deployment_registry_username is defined
+      - deployment_registry_username | length > 0
+      - deployment_server_name is defined
+      - deployment_server_name | length > 0
+      - deployment_main_server_name is defined
+      - deployment_main_server_name | length > 0
+      - deployment_basic_auth_username is defined
+      - deployment_basic_auth_username | length > 0
+    fail_msg: Required deployment configuration is not configured
+    success_msg: Required deployment configuration is available
+
 - name: Validate required deployment secrets
   ansible.builtin.assert:
     that:
@@ -6,6 +24,8 @@
       - vault_ghcr_token | length > 0
       - vault_app_secret is defined
       - vault_app_secret | length > 0
+      - vault_basic_auth_password_hash is defined
+      - vault_basic_auth_password_hash | length > 0
     fail_msg: Required deployment secrets are not configured
     success_msg: Required deployment secrets are available
   no_log: true
