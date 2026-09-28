@@ -34,10 +34,11 @@
     {{
       (bootstrap_root_authorized_keys.content | b64decode).splitlines()
       | map('trim')
-      | reject('equalto', '')
-      | reject('match', '^#')
+      | select('match', '^(ssh-|ecdsa-|sk-)')
       | list
     }}
+  loop_control:
+    label: "{{ item.split()[-1] if item.split() | length > 2 else item.split()[0] }}"
   when:
     - bootstrap_root_authorized_keys is succeeded
     - bootstrap_root_authorized_keys.content is defined

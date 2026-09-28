@@ -25,6 +25,15 @@
     mode: "0644"
   notify: Restart Docker user firewall
 
+- name: Install Docker user IPv6 firewall rules
+  ansible.builtin.template:
+    src: docker-user-firewall-v6.rules.j2
+    dest: /etc/iptables/docker-user-v6.rules
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Docker user firewall
+
 - name: Install Docker user firewall script
   ansible.builtin.template:
     src: docker-user-firewall.sh.j2

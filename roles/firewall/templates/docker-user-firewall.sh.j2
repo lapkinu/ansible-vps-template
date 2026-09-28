@@ -2,13 +2,25 @@
 
 set -Eeuo pipefail
 
-readonly RULESET="/etc/iptables/docker-user.rules"
+readonly IPV4_RULESET="/etc/iptables/docker-user.rules"
+readonly IPV6_RULESET="/etc/iptables/docker-user-v6.rules"
 
+# Validate both rulesets before changing either firewall.
 /usr/sbin/iptables-restore \
     --test \
     --noflush \
-    "${RULESET}"
+    "${IPV4_RULESET}"
 
+/usr/sbin/ip6tables-restore \
+    --test \
+    --noflush \
+    "${IPV6_RULESET}"
+
+# Apply Docker forwarding policy for both network stacks.
 /usr/sbin/iptables-restore \
     --noflush \
-    "${RULESET}"
+    "${IPV4_RULESET}"
+
+/usr/sbin/ip6tables-restore \
+    --noflush \
+    "${IPV6_RULESET}"
