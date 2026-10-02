@@ -1,0 +1,33 @@
+---
+admin_ssh_public_key_path: "~/.ssh/id_rsa.pub"
+admin_ssh_public_key: "{{ lookup('file', admin_ssh_public_key_path) }}"
+
+deploy_ci_ssh_public_key_path: "~/.ssh/github-actions-deploy.pub"
+deploy_ci_ssh_public_key: "{{ lookup('file', deploy_ci_ssh_public_key_path) }}"
+
+server_users:
+  - name: deploy
+    shell: /bin/bash
+    groups: []
+    append_groups: false
+
+server_authorized_keys:
+  - user: deploy
+    key: "{{ deploy_ci_ssh_public_key }}"
+    options:
+      - no-agent-forwarding
+      - no-port-forwarding
+      - no-X11-forwarding
+      - no-pty
+
+deployment_app_name: # example-app
+
+deployment_registry_username: # username
+
+deployment_image_repository: # ghcr.io/username/example-app
+
+deployment_main_server_name: # example.com
+
+deployment_server_name: # dev.example.com
+
+deployment_basic_auth_username: # dev

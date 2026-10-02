@@ -1,0 +1,15 @@
+---
+deployment_user: deploy
+
+deployment_root: "/srv/{{ deployment_app_name }}"
+deployment_config_root: "/etc/{{ deployment_app_name }}"
+
+deployment_registry_url: ghcr.io
+
+deployment_http_port: 80
+deployment_https_port: 443
+deployment_http3_port: 443
+
+deployment_healthcheck_path: /health
+deployment_healthcheck_attempts: 30
+deployment_healthcheck_delay: 2

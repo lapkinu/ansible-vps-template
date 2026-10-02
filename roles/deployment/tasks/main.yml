@@ -26,6 +26,8 @@
       - vault_app_secret | length > 0
       - vault_basic_auth_password_hash is defined
       - vault_basic_auth_password_hash | length > 0
+      - vault_caddy_mercure_jwt_secret is defined
+      - vault_caddy_mercure_jwt_secret | length > 0
     fail_msg: Required deployment secrets are not configured
     success_msg: Required deployment secrets are available
   no_log: true

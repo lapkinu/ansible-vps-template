@@ -1,2 +1,2 @@
-text.txt
-server-commands.md
+# Ansible Vault
+inventory/production/group_vars/all/vault.yml
