@@ -31,3 +31,7 @@ deployment_main_server_name: # example.com
 deployment_server_name: # dev.example.com
 
 deployment_basic_auth_username: # dev
+
+deployment_landing_enabled: true
+
+deployment_basic_auth_enabled: true
