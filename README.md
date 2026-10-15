@@ -357,6 +357,65 @@ ansible-vault edit inventory/production/group_vars/all/vault.yml
 
 `vault.yml` is ignored by Git and must not be committed.
 
+##  Application Launch Modes
+
+The deployment supports two application modes: pre-launch and production.
+
+These modes are controlled through Ansible variables in inventory/production/group_vars/all/main.yml.
+
+Pre-launch mode
+
+Use this mode while the application is being developed and prepared for public release.
+```yml
+deployment_landing_enabled: true
+deployment_basic_auth_enabled: true
+```
+```yml
+deployment_main_server_name: example.com
+deployment_server_name: dev.example.com
+```
+
+Expected behavior:
+
+example.com serves a static landing page.
+dev.example.com serves the Symfony application behind HTTP Basic Authentication.
+
+This allows the public domain to display a landing page while the application remains protected on a separate hostname.
+
+Production mode
+
+When the application is ready for public release, update the configuration:
+
+```yml
+deployment_landing_enabled: false
+deployment_basic_auth_enabled: false
+```
+```yml
+deployment_server_name: example.com
+```
+
+Expected behavior:
+
+example.com serves the Symfony application directly.
+The landing page is disabled.
+HTTP Basic Authentication is disabled for the application.
+
+The production hostname becomes the primary application hostname.
+
+Switching modes
+
+To switch from pre-launch to production:
+
+Update the variables in inventory/production/group_vars/all/main.yml.
+Set deployment_landing_enabled and deployment_basic_auth_enabled to false.
+Change deployment_server_name to the production hostname.
+Apply the updated configuration using the appropriate Ansible deployment workflow.
+Verify that the application is accessible and the health check passes.
+
+Keep the hostname settings consistent with your DNS records and TLS configuration.
+
+Important: Review the resulting configuration before applying changes to a production server. Disabling Basic Authentication makes the application publicly accessible if no other access controls are configured.
+
 ## Provision the VPS
 
 Provisioning happens in two stages.
