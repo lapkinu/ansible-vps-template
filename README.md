@@ -1,747 +1,471 @@
 # Ansible VPS Template
 
-Production VPS provisioning and deployment template designed to work with
+Production VPS provisioning and deployment template designed to work with the  
 [Symfony App Template](https://github.com/lapkinu/symfony-app-template).
 
 The template is built around one idea:
 
-**the production server should be reproducible, restricted, and ready to run immutable application releases without becoming part of the application build process.**
+**A production-ready VPS should be available early in the project lifecycle, so the application can be developed and reviewed through the same path that will later serve the released version.**
 
-A fresh Debian VPS can be prepared through Ansible and then used as the stable
-server-side half of the deployment pipeline.
+A fresh Debian VPS is prepared once with Ansible and then used as the stable server-side half of the deployment pipeline.  
+Application CI builds the release. The VPS runs it.
 
-Application CI builds the release.
+---
 
-The VPS runs it.
+## Companion Application
+
+This repository prepares the VPS and controls how releases are deployed.
+
+The companion [Symfony App Template](https://github.com/lapkinu/symfony-app-template)  
+builds, tests and publishes the immutable production image.
+
+Together they provide a complete path from early development to a restricted  
+production environment that can already be used while the application remains private.
+
+---
 
 ## Why This Template Exists
 
 Application deployment and server provisioning solve different problems.
 
-The application repository should be responsible for producing a tested release.
-The infrastructure repository should be responsible for deciding how that release
-is allowed to reach and run on the server.
+- The application repository is responsible for producing a tested release.
+- The infrastructure repository is responsible for deciding how that release is allowed to reach and run on the server.
 
 This template establishes that boundary explicitly.
 
 The production server:
 
-* does not clone the application repository;
-* does not build application source;
-* does not give the CI deployment user unrestricted `sudo`;
-* does not give the CI deployment user direct access to the Docker socket.
+- does not clone the application repository
+- does not build application source
+- does not give the CI deployment user unrestricted `sudo`
+- does not give the CI deployment user direct access to the Docker socket
 
-Instead, Ansible prepares the VPS once and installs a restricted deployment
-mechanism that application CI can safely invoke for future releases.
+Ansible prepares the VPS once and installs a restricted deployment mechanism.  
+Subsequent application releases do not require re-running Ansible.
 
-Normal application releases therefore do not require rerunning Ansible.
+---
+
+## Key Features
+
+| Feature                | Description                                                              |
+| ---------------------- | ------------------------------------------------------------------------ |
+| Restricted deployment  | CI can only invoke one specific command via `sudo`                       |
+| Immutable releases     | Only full Git SHAs are accepted                                          |
+| Automatic rollback     | Previous working release is restored on health-check failure             |
+| Serialized deployments | Concurrent deployments are blocked                                       |
+| Pre-launch mode        | Public domain serves a landing page; application stays behind Basic Auth |
+| Strong defaults        | Root SSH disabled, password auth disabled, firewall, minimal privileges  |
+
+---
 
 ## Architecture
 
+### Separation of responsibilities
+
 ```mermaid
 flowchart LR
-    ANSIBLE["Ansible controller"]
-    CI["Application GitHub Actions"]
-    GHCR["GHCR<br/>immutable SHA image"]
-
-    subgraph VPS["Production VPS"]
-        SYSTEM["Debian<br/>Docker · SSH · Firewall"]
-        DEPLOY["Restricted deployment wrapper"]
-        APP["Application container"]
-        HEALTH["HTTPS health validation"]
-        PREVIOUS["Previous working release"]
+    subgraph APP["Application Repository"]
+        CODE["Symfony application"] --> CI["GitHub Actions"]
+        CI --> IMAGE["GHCR<br/>immutable SHA image"]
     end
 
-    ANSIBLE -->|provisions & configures| SYSTEM
-    ANSIBLE -->|installs| DEPLOY
+    subgraph INFRA["Infrastructure Repository"]
+        ANSIBLE["Ansible"] --> VPS["Production VPS"]
+    end
 
-    CI -->|publishes| GHCR
-    CI -->|SSH as deployment user| DEPLOY
-
-    DEPLOY -->|pulls requested SHA| GHCR
-    DEPLOY --> APP
-    APP --> HEALTH
-
-    HEALTH -->|unhealthy| PREVIOUS
+    IMAGE -->|restricted deploy| VPS
 ```
 
-The operational path after provisioning is intentionally simple:
+The application repository produces the release.  
+The infrastructure repository prepares the server and controls how the release is allowed to run.
 
-```text
-GitHub Actions → restricted deployment command → immutable GHCR image → Docker Compose → health validation
+### Deployment flow
+
+```mermaid
+flowchart LR
+    CI["GitHub Actions"] -->|SSH as deploy user| WRAPPER["/usr/local/sbin/deploy-app &lt;sha&gt;"]
+    WRAPPER -->|pull| GHCR["GHCR image"]
+    WRAPPER --> COMPOSE["Docker Compose"]
+    COMPOSE --> APP["Application container"]
+
+    APP --> LANDING["example.com<br/>Landing page"]
+    APP --> PROTECTED["dev.example.com<br/>Basic Auth → Symfony"]
+    APP --> HEALTH["GET /health"]
+
+    HEALTH -->|unhealthy| ROLLBACK["Restore previous release"]
 ```
 
-If the new release becomes healthy, deployment completes.
+In pre-launch mode the same container serves both the public landing page and the protected application.  
+When the application is ready, the public hostname is switched to the Symfony application without changing the deployment model.
 
-If deployment fails after the running release has already been modified, the
-server-side deployment mechanism restores the previous working release.
+---
 
 ## What Is Included
 
-The template provisions and configures:
+- Administrator and deployment users
+- SSH hardening
+- Docker Engine and Docker Compose
+- Host and Docker traffic firewall rules
+- Application runtime configuration
+- Production secrets (via Ansible Vault)
+- GHCR authentication
+- Dedicated CI deployment SSH key
+- Restricted `sudo` deployment wrapper
+- Serialized deployments
+- HTTPS health validation
+- Automatic rollback
 
-* administrator and deployment users;
-* SSH hardening;
-* Docker Engine and Docker Compose;
-* host firewall rules;
-* Docker traffic firewall rules;
-* application runtime configuration;
-* production secrets;
-* GHCR authentication;
-* a dedicated CI deployment SSH key;
-* a restricted `sudo` deployment wrapper;
-* serialized deployments;
-* application health validation;
-* automatic rollback.
+**Tested baseline:** Debian 13 · amd64 · Docker · Docker Compose · GitHub Actions · GHCR
 
-The tested production baseline is:
-
-* Debian 13;
-* `amd64`;
-* Docker Engine;
-* Docker Compose;
-* GitHub Actions;
-* GitHub Container Registry.
-
-The template is intentionally focused on a single VPS deployment model rather
-than trying to cover every operating system, cloud provider, registry, or
-orchestration platform.
+---
 
 ## Prerequisites
 
-On the Ansible controller:
+**Ansible controller:**
 
-* Ansible;
-* Docker, used to generate the Caddy Basic Auth password hash;
-* an SSH key for server administration;
-* a separate SSH key pair for CI deployment.
+- Ansible
+- Docker (for generating the Basic Auth password hash)
+- Administrator SSH key
+- Separate SSH key pair for CI deployment
 
-The target server should provide:
+**Target server:**
 
-* a fresh Debian 13 installation;
-* initial SSH access as `root`;
-* DNS records for the production application hostnames before application
-  deployment.
+- Fresh Debian 13
+- Initial root SSH access
+- DNS records for the application hostnames
 
-For private GHCR images, a GitHub credential with permission to pull the
-application package is also required.
+For private GHCR images a GitHub token with `read:packages` is required.
+
+---
 
 ## Quick Start
 
-### 1. Install Ansible dependencies
+### 1. Install Ansible collections
 
 ```console
 ansible-galaxy collection install -r requirements.yml
 ```
 
-### 2. Configure the production host
+### 2. Set the server address
 
-Edit:
-
-```text
-inventory/production/hosts.yml
-```
-
-Set the VPS address:
+Edit `inventory/production/hosts.yml`:
 
 ```yaml
 all:
   hosts:
     production:
-      ansible_host: 203.0.113.10
+      ansible_host: 203.0.113.10 # replace with your VPS IP or hostname
 ```
 
-Replace the documentation address with the actual production server IP address
-or hostname.
+### 3. Configure SSH keys
 
-### 3. Configure the project
+Two separate keys are required.
 
-Edit:
+**Administrator key** — used by Ansible for server management.
 
-```text
-inventory/production/group_vars/all/main.yml
-```
-
-At minimum, configure the application-specific values:
-
-```yaml
-deployment_app_name: example-app
-
-deployment_registry_username: username
-
-deployment_image_repository: ghcr.io/username/example-app
-
-deployment_main_server_name: example.com
-
-deployment_server_name: dev.example.com
-
-deployment_basic_auth_username: dev
-```
-
-`deployment_app_name` is the server-side deployment identifier.
-
-It must match `DEPLOY_APP` in the companion application repository.
-
-The default deployment user is:
-
-```text
-deploy
-```
-
-and therefore the application repository normally uses:
-
-```text
-DEPLOY_USER=deploy
-```
-
-`deployment_image_repository` must point to the same GHCR repository that is
-published by the application CI workflow.
-
-## SSH Keys
-
-Two separate SSH identities are used.
-
-### Administrator key
-
-The administrator key is used for infrastructure management through Ansible.
-
-The default configuration expects a public key similar to:
-
-```yaml
-admin_ssh_public_key_path: "~/.ssh/id_rsa.pub"
-admin_ssh_public_key: "{{ lookup('file', admin_ssh_public_key_path) }}"
-```
-
-If another key is used, update the path accordingly.
-
-For example:
+This is the public key that will be installed for the `admin` user.  
+After bootstrap, root SSH login is disabled, so this becomes the main administrative key.
 
 ```yaml
 admin_ssh_public_key_path: "~/.ssh/id_ed25519.pub"
+admin_ssh_public_key: "{{ lookup('file', admin_ssh_public_key_path) }}"
 ```
 
-The configured path must point to a public key, never to the private key.
+Replace the path with the public key you use (or will use) to access the server.  
+If you don’t have a key yet, create one and make sure you can connect to the fresh server as `root` with it before running the playbooks.
 
-### CI deployment key
-
-GitHub Actions uses a separate SSH key pair to connect as the unprivileged
-deployment user.
-
-Create it on the trusted Ansible controller:
+**CI deployment key** — used only by GitHub Actions to trigger deployments:
 
 ```console
 mkdir -p ~/.ssh/github-actions
 chmod 700 ~/.ssh/github-actions
-
-ssh-keygen \
-  -t ed25519 \
-  -f ~/.ssh/github-actions/deploy \
-  -C "github-actions-deploy"
+ssh-keygen -t ed25519 -f ~/.ssh/github-actions/deploy -C "github-actions-deploy"
 ```
-
-For the current deployment workflow, leave the passphrase empty.
-
-This creates:
-
-```text
-~/.ssh/github-actions/deploy      private key
-~/.ssh/github-actions/deploy.pub  public key
-```
-
-Configure the public key in `main.yml`:
 
 ```yaml
 deploy_ci_ssh_public_key_path: "~/.ssh/github-actions/deploy.pub"
 deploy_ci_ssh_public_key: "{{ lookup('file', deploy_ci_ssh_public_key_path) }}"
 ```
 
-Ansible installs the public key on the VPS.
+The private key (`~/.ssh/github-actions/deploy`) will later be stored in the  
+application repository as the `DEPLOY_SSH_PRIVATE_KEY` secret.
 
-The corresponding private key is later stored in the application repository's
-GitHub `production` Environment as:
+Do not reuse the administrator key for CI.
 
-```text
-DEPLOY_SSH_PRIVATE_KEY
-```
 
-Do not reuse the administrator key for CI deployment.
+### 4. Configure project values
 
-Do not commit either private key.
-
-## Production Secrets
-
-Create the local Vault file from the provided example:
-
-```console
-cp \
-  inventory/production/group_vars/all/vault.example.yml \
-  inventory/production/group_vars/all/vault.yml
-```
-
-Configure:
+Edit `inventory/production/group_vars/all/main.yml`:
 
 ```yaml
-vault_ghcr_token: "replace-with-ghcr-token"
-vault_app_secret: "replace-with-generated-app-secret"
-vault_basic_auth_password_hash: '<replace-with-generated-bcrypt-hash>'
-vault_caddy_mercure_jwt_secret: "replace-with-generated-mercure-secret"
+deployment_app_name: example-app
+# Server-side deployment identifier.
+# Must match DEPLOY_APP in the application repository.
+# Becomes the deployment command: /usr/local/sbin/deploy-example-app
+
+deployment_registry_username: username
+deployment_image_repository: ghcr.io/username/example-app
+# Must point to the same GHCR repository published by the application CI.
+
+deployment_main_server_name: example.com
+# Public hostname. In pre-launch mode this serves the landing page.
+
+deployment_server_name: dev.example.com
+# Application hostname. In pre-launch mode this is protected by Basic Auth.
+
+deployment_basic_auth_username: dev
 ```
 
-### GHCR credential
+### 5. Configure secrets
 
-`vault_ghcr_token` must contain a GitHub credential that is allowed to pull the
-configured private GHCR image.
-
-For a classic GitHub personal access token, the minimum package permission is:
-
-```text
-read:packages
+```console
+cp inventory/production/group_vars/all/vault.example.yml \
+   inventory/production/group_vars/all/vault.yml
 ```
 
-Additional repository or organization restrictions may require corresponding
-access configuration.
+```yaml
+vault_ghcr_token: "github-token-with-read:packages"
+vault_app_secret: "generated-secret"
+vault_caddy_mercure_jwt_secret: "generated-secret"
+vault_basic_auth_password_hash: "<bcrypt-hash>"
+```
 
-### Application secrets
+Generate the required values:
 
-Generate the Symfony application secret:
+**1. GHCR token (`vault_ghcr_token`)**
+
+A GitHub token (classic or fine-grained) with `read:packages` permission.  
+Required to pull private images from GitHub Container Registry.
+
+**2. Application secret (`vault_app_secret`)**
 
 ```console
 openssl rand -hex 32
 ```
 
-Generate a separate Mercure JWT secret the same way:
+**3. Mercure JWT secret (`vault_caddy_mercure_jwt_secret`)**
 
 ```console
 openssl rand -hex 32
 ```
 
-Do not reuse the same value for both secrets.
+Use a different value. Do not reuse the same secret for both `vault_app_secret` and `vault_caddy_mercure_jwt_secret`.
 
-### Basic Auth password
-
-Choose the password that will protect the production application hostname and
-generate its bcrypt hash:
+**4. Basic Auth password hash (`vault_basic_auth_password_hash`)**
 
 ```console
 docker run --rm caddy:2-alpine \
-  caddy hash-password --plaintext 'replace-with-a-strong-password'
+  caddy hash-password --plaintext 'your-strong-password'
 ```
 
-Store the returned value as:
-
-```yaml
-vault_basic_auth_password_hash: '<generated-bcrypt-hash>'
-```
-
-Store the raw bcrypt hash.
-
-Do not manually replace `$` with `$$`; the deployment configuration performs the
-escaping required by Docker Compose.
-
-The Basic Auth password and the Ansible Vault password are different
-credentials with different purposes.
-
-### Encrypt the Vault
-
-After all values have been configured:
+Encrypt the file:
 
 ```console
 ansible-vault encrypt inventory/production/group_vars/all/vault.yml
 ```
 
-For later changes:
-
-```console
-ansible-vault edit inventory/production/group_vars/all/vault.yml
-```
-
-`vault.yml` is ignored by Git and must not be committed.
-
-##  Application Launch Modes
-
-The deployment supports two application modes: pre-launch and production.
-
-These modes are controlled through Ansible variables in inventory/production/group_vars/all/main.yml.
-
-Pre-launch mode
-
-Use this mode while the application is being developed and prepared for public release.
-```yml
-deployment_landing_enabled: true
-deployment_basic_auth_enabled: true
-```
-```yml
-deployment_main_server_name: example.com
-deployment_server_name: dev.example.com
-```
-
-Expected behavior:
-
-example.com serves a static landing page.
-dev.example.com serves the Symfony application behind HTTP Basic Authentication.
-
-This allows the public domain to display a landing page while the application remains protected on a separate hostname.
-
-Production mode
-
-When the application is ready for public release, update the configuration:
-
-```yml
-deployment_landing_enabled: false
-deployment_basic_auth_enabled: false
-```
-```yml
-deployment_server_name: example.com
-```
-
-Expected behavior:
-
-example.com serves the Symfony application directly.
-The landing page is disabled.
-HTTP Basic Authentication is disabled for the application.
-
-The production hostname becomes the primary application hostname.
-
-Switching modes
-
-To switch from pre-launch to production:
-
-Update the variables in inventory/production/group_vars/all/main.yml.
-Set deployment_landing_enabled and deployment_basic_auth_enabled to false.
-Change deployment_server_name to the production hostname.
-Apply the updated configuration using the appropriate Ansible deployment workflow.
-Verify that the application is accessible and the health check passes.
-
-Keep the hostname settings consistent with your DNS records and TLS configuration.
-
-Important: Review the resulting configuration before applying changes to a production server. Disabling Basic Authentication makes the application publicly accessible if no other access controls are configured.
-
-## Provision the VPS
-
-Provisioning happens in two stages.
-
-### Bootstrap
-
-The bootstrap playbook uses the initial root SSH access to prepare the
-administrator account:
+### 6. Provision the server
 
 ```console
 ansible-playbook playbooks/bootstrap.yml --ask-vault-pass
 ```
 
-It preserves existing root authorized SSH keys, installs the configured
-administrator key, and prepares passwordless `sudo`.
-
-### Server configuration
-
-After bootstrap:
-
 ```console
 ansible-playbook playbooks/server.yml --ask-vault-pass
 ```
 
-The server playbook configures the remaining production environment, including:
+`bootstrap.yml` creates the administrator account.  
+`server.yml` configures the rest of the production environment.
 
-* users;
-* SSH hardening;
-* Docker;
-* firewall rules;
-* runtime configuration;
-* deployment access;
-* the server-side deployment mechanism.
-
-The playbooks are intended to be rerunnable when infrastructure configuration
-changes.
-
-## Verify Deployment SSH Access
-
-Before configuring GitHub Actions, verify the dedicated CI key from the trusted
-controller:
+### 7. Verify deployment access
 
 ```console
-ssh \
-  -i ~/.ssh/github-actions/deploy \
-  -o IdentitiesOnly=yes \
-  deploy@<DEPLOY_HOST> \
-  'id'
+ssh -i ~/.ssh/github-actions/deploy \
+    -o IdentitiesOnly=yes \
+    deploy@YOUR_SERVER \
+    'id'
 ```
 
-The connection should authenticate using the dedicated key and report the
-unprivileged deployment user.
+The connection should succeed as the unprivileged `deploy` user.
 
-## Configure GitHub Deployment
+### 8. Configure the application repository
 
-In the companion application repository, create a GitHub Environment named:
+In the companion application repository create a GitHub Environment named `production`.
 
-```text
-production
-```
+Location: Settings → Environments → New environment.
 
-Configure these environment variables:
+**Environment variables:**
 
-```text
-DEPLOY_HOST=<server-address>
-DEPLOY_USER=deploy
-DEPLOY_APP=<deployment_app_name>
-```
+| Variable      | Value                          | Source                  |
+| ------------- | ------------------------------ | ----------------------- |
+| `DEPLOY_HOST` | VPS IP or hostname             | same as `ansible_host`  |
+| `DEPLOY_USER` | `deploy`                       | default deployment user |
+| `DEPLOY_APP`  | value of `deployment_app_name` | must match exactly      |
 
-Configure these environment secrets:
+**Environment secrets:**
 
-```text
-DEPLOY_SSH_PRIVATE_KEY
-DEPLOY_SSH_KNOWN_HOSTS
-```
+**1. `DEPLOY_SSH_PRIVATE_KEY`**
 
-### Deployment private key
-
-Copy the complete private key:
+Copy the entire private key file:
 
 ```console
 cat ~/.ssh/github-actions/deploy
 ```
 
-Store the entire OpenSSH block, including its `BEGIN` and `END` lines, as:
+Paste the full output (including the `BEGIN` and `END` lines) into the secret.
+
+**2. `DEPLOY_SSH_KNOWN_HOSTS`**
+
+GitHub Actions must verify that it is connecting to the correct server.
+
+On a machine that has already connected to the server at least once, run:
+
+```console
+ssh-keyscan -t ed25519 YOUR_SERVER
+```
+
+Example output:
 
 ```text
-DEPLOY_SSH_PRIVATE_KEY
+203.0.113.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyDataHere...
 ```
 
-Do not base64-encode it.
+Copy the **entire line** and paste it as the value of the `DEPLOY_SSH_KNOWN_HOSTS` secret.
 
-### Verify the VPS host key
+### 9. Enable deployment
 
-GitHub Actions must also verify that it is connecting to the expected VPS.
-
-Through an already trusted administrator connection, inspect the server's
-Ed25519 host-key fingerprint:
-
-```console
-ssh admin@<DEPLOY_HOST>
-
-sudo ssh-keygen \
-  -lf /etc/ssh/ssh_host_ed25519_key.pub \
-  -E sha256
-
-exit
-```
-
-Then collect the public host key from the trusted controller:
-
-```console
-ssh-keyscan -t ed25519 <DEPLOY_HOST> 2>/dev/null \
-  > /tmp/deploy-known-hosts
-
-ssh-keygen \
-  -lf /tmp/deploy-known-hosts \
-  -E sha256
-```
-
-The fingerprints must match.
-
-After verification:
-
-```console
-cat /tmp/deploy-known-hosts
-```
-
-Store the complete resulting line as:
-
-```text
-DEPLOY_SSH_KNOWN_HOSTS
-```
-
-Never copy the server's private host key.
-
-## Enable Production Deployment
-
-Application CI can build and publish production images immediately, but actual
-deployment is disabled by default.
-
-Only after the VPS and the GitHub `production` Environment have been configured,
-create the following **repository-level Actions variable** in the application
-repository:
+Create a **repository-level** Actions variable (not an Environment variable):
 
 ```text
 DEPLOY_ENABLED=true
 ```
 
-Create it under:
+Location: Settings → Secrets and variables → Actions → Variables.
 
-```text
-Settings → Secrets and variables → Actions → Variables
+While this variable is missing or not exactly `true`, the deployment job is skipped.  
+This allows the application repository to build and publish images without permission to deploy them.
+
+---
+
+## Application Launch Modes
+
+Controlled by variables in `inventory/production/group_vars/all/main.yml`.
+
+### Pre-launch
+
+```yaml
+deployment_landing_enabled: true
+deployment_basic_auth_enabled: true
+
+deployment_main_server_name: example.com
+deployment_server_name: dev.example.com
 ```
 
-Do not create `DEPLOY_ENABLED` as a variable of the `production` GitHub
-Environment.
+- `example.com` serves a static landing page
+- `dev.example.com` serves the application behind Basic Auth
 
-If it is missing or its value is anything other than the exact string `true`,
-the deployment job is skipped.
+### Production
 
-This allows a repository created from the application template to build
-production artifacts without automatically receiving permission to deploy them.
+To apply the change:
+1. Update the variables in `inventory/production/group_vars/all/main.yml`
 
-## Application and Infrastructure Contract
-
-The companion repositories share a small explicit deployment interface:
-
-```text
-DEPLOY_APP                    ↔ deployment_app_name
-DEPLOY_USER                   ↔ deployment_user
-GHCR image repository         ↔ deployment_image_repository
-MAIN_SERVER_NAME              ↔ deployment_main_server_name
-SERVER_NAME                   ↔ deployment_server_name
-DEPLOY_SSH_PRIVATE_KEY        ↔ deploy_ci_ssh_public_key pair
-GET /health                   ↔ deployment_healthcheck_path
+```yaml
+deployment_landing_enabled: false
+deployment_basic_auth_enabled: false
 ```
 
-The values on both sides must describe the same application and deployment
-target.
+- Application is served directly on the main domain
+- Landing page and Basic Auth are disabled
 
-Keeping this interface explicit allows application development and
-infrastructure provisioning to evolve independently.
+It is not necessary to change the hostname variables when switching to production mode.
+
+2. Re-run the server playbook:
+
+```console
+ansible-playbook playbooks/server.yml --ask-vault-pass
+```
+3. In the application repository, re-run the Deploy production job (the final stage only) so the new configuration is picked up by the running release.
+
+---
 
 ## Deployment Model
 
-Application deployment is initiated by the companion application's GitHub
-Actions workflow.
-
-CI connects to the VPS using the restricted deployment user and invokes:
+CI invokes:
 
 ```console
-sudo -n /usr/local/sbin/deploy-<DEPLOY_APP> '<40-character-git-sha>'
+sudo -n /usr/local/sbin/deploy-<app-name> '<40-character-git-sha>'
 ```
 
-For example, with:
+The wrapper:
 
-```text
-DEPLOY_APP=example-app
-```
+- accepts only a full Git SHA
+- serializes deployments with `flock`
+- pulls the immutable image from GHCR
+- validates Docker Compose configuration
+- starts the release
+- runs an HTTPS health check
+- restores the previous release on failure
 
-the server-side command is:
+The deployment user has no Docker socket access and no unrestricted `sudo`.
 
-```text
-/usr/local/sbin/deploy-example-app
-```
-
-The deployment wrapper:
-
-* accepts exactly one 40-character lowercase Git SHA;
-* serializes deployments with `flock`;
-* pulls the requested immutable GHCR image;
-* validates Docker Compose configuration before modifying the running
-  application;
-* starts the requested release;
-* performs the HTTPS application health check;
-* restores the previous working release when deployment or health validation
-  fails.
-
-The deployment user does not need unrestricted `sudo` or direct Docker access.
-
-The server provisioning layer exposes only the required root-owned deployment
-wrapper through `sudo`.
-
-Mutable image tags such as `latest` are not part of this deployment model.
-
-## Runtime Configuration
-
-The main non-secret production values are stored in:
-
-```text
-inventory/production/group_vars/all/main.yml
-```
-
-Encrypted values are stored in:
-
-```text
-inventory/production/group_vars/all/vault.yml
-```
-
-Runtime configuration is rendered on the server and kept outside the immutable
-application image.
-
-Changing a runtime secret or environment value does not modify the environment
-of an already running container.
-
-The application container must be recreated through the deployment mechanism
-before the new values take effect.
-
-A runtime-only configuration change does not inherently require a new
-application commit. An already published SHA can be deployed again, provided the
-server-side deployment implementation recreates the container as expected.
+---
 
 ## Security Model
 
-The provisioned server follows a deliberately restricted deployment model:
+- Root SSH login disabled
+- Password authentication disabled
+- Deployment user is unprivileged and not in the `docker` group
+- Runtime configuration and secrets are root-owned
+- CI can only call the configured deployment wrapper
+- Input is restricted to a full Git SHA
+- Concurrent deployments are serialized
+- Strict SSH host key verification
+- Host and Docker traffic protected by firewall
 
-* direct root SSH login is disabled by the server configuration;
-* SSH password authentication is disabled;
-* the deployment user is unprivileged;
-* the deployment user is not a member of the Docker group;
-* the deployment user has no direct access to the Docker socket;
-* runtime configuration is root-owned;
-* deployment secrets are readable only by root;
-* CI can invoke only the configured deployment wrapper through `sudo`;
-* deployment input is restricted to a full Git SHA;
-* concurrent deployments are serialized;
-* SSH host verification is strict;
-* host and Docker traffic are protected by firewall configuration.
+---
 
-The application image itself is built by application CI.
+## Runtime Configuration
 
-The production server remains a deployment target rather than a build
-environment.
+Non-secret values: `inventory/production/group_vars/all/main.yml`  
+Secrets: `inventory/production/group_vars/all/vault.yml`
+
+Runtime configuration is rendered on the server and kept outside the application image.  
+Changing a value requires recreating the container through the deployment mechanism.
+
+---
 
 ## Database Migrations
 
-Database provisioning and migrations are not part of the current deployment
-contract.
+Database provisioning and migrations are not part of the current deployment contract.  
+Projects that need a database should define their own migration, backup and rollback strategy.
 
-Projects adding a database should define their production database, migration,
-backup, and rollback strategy before relying on application-level automatic
-migration behavior.
+---
 
-## Operations
-
-Validate the playbooks:
+## Useful Commands
 
 ```console
 ansible-playbook playbooks/bootstrap.yml --syntax-check
-ansible-playbook playbooks/server.yml --syntax-check
 ```
 
-Inspect the resolved production host configuration:
+```console
+ansible-playbook playbooks/server.yml --syntax-check
+```
 
 ```console
 ansible-inventory --host production --ask-vault-pass
 ```
 
-Edit encrypted secrets:
-
 ```console
 ansible-vault edit inventory/production/group_vars/all/vault.yml
 ```
-
-Reapply infrastructure configuration:
 
 ```console
 ansible-playbook playbooks/server.yml --ask-vault-pass
 ```
 
-Normal application releases are deployed by application CI and do not require
-rerunning Ansible.
+Normal application releases are handled by GitHub Actions and do not require re-running Ansible.
 
-## Companion Application
-
-The intended application repository is:
-
-[Symfony App Template](https://github.com/lapkinu/symfony-app-template)
-
-The two templates provide different halves of the same production workflow.
-
-The application repository tests, builds, publishes, and identifies a release.
-
-The infrastructure repository prepares the VPS and controls how that release is
-allowed to run there.
+---
 
 ## License
 

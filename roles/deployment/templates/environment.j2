@@ -1,6 +1,10 @@
 MAIN_SERVER_NAME={{ deployment_main_server_name }}
-SERVER_NAME={{ deployment_server_name }}
+SERVER_NAME={{ deployment_server_name if (deployment_landing_enabled | bool) else deployment_main_server_name }}
+LANDING_CONFIG={{ 'import landing.Caddyfile' if (deployment_landing_enabled | bool) else '' }}
+BASIC_AUTH_CONFIG={{ 'import basic_auth' if (deployment_basic_auth_enabled | bool) else '' }}
 BASIC_AUTH_USERNAME={{ deployment_basic_auth_username }}
+DEFAULT_URI=https://{{ deployment_server_name if (deployment_landing_enabled | bool) else deployment_main_server_name }}
+MERCURE_PUBLIC_URL=https://{{ deployment_server_name if (deployment_landing_enabled | bool) else deployment_main_server_name }}/.well-known/mercure
 HTTP_PORT={{ deployment_http_port }}
 HTTPS_PORT={{ deployment_https_port }}
 HTTP3_PORT={{ deployment_http3_port }}
