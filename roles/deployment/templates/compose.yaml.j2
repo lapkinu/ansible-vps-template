@@ -3,6 +3,10 @@ services:
   php:
     image: ${APP_IMAGE:?APP_IMAGE is required}
     restart: unless-stopped
+    environment:
+      MERCURE_PUBLISHER_JWT_KEY: ${CADDY_MERCURE_JWT_SECRET:?CADDY_MERCURE_JWT_SECRET is required}
+      MERCURE_SUBSCRIBER_JWT_KEY: ${CADDY_MERCURE_JWT_SECRET:?CADDY_MERCURE_JWT_SECRET is required}
+      MERCURE_JWT_SECRET: ${CADDY_MERCURE_JWT_SECRET:?CADDY_MERCURE_JWT_SECRET is required}
     env_file:
       - /etc/{{ deployment_app_name }}/environment
       - /etc/{{ deployment_app_name }}/secrets.env

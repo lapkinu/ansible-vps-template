@@ -11,7 +11,7 @@ readonly COMPOSE_CONFIG_FILE="${DEPLOYMENT_ROOT}/compose.yaml"
 readonly ENVIRONMENT_FILE="${CONFIG_ROOT}/environment"
 readonly SECRETS_FILE="${CONFIG_ROOT}/secrets.env"
 
-readonly HEALTHCHECK_URL="https://{{ deployment_server_name }}{{ deployment_healthcheck_path }}"
+readonly HEALTHCHECK_URL="https://{{ deployment_server_name if (deployment_landing_enabled | bool) else deployment_main_server_name }}{{ deployment_healthcheck_path }}"
 readonly HEALTHCHECK_ATTEMPTS={{ deployment_healthcheck_attempts }}
 readonly HEALTHCHECK_DELAY={{ deployment_healthcheck_delay }}
 
@@ -54,7 +54,7 @@ healthcheck() {
             --silent \
             --show-error \
             --output /dev/null \
-            --resolve "{{ deployment_server_name }}:443:127.0.0.1" \
+            --resolve "{{ deployment_server_name if (deployment_landing_enabled | bool) else deployment_main_server_name }}:443:127.0.0.1" \
             "${HEALTHCHECK_URL}"; then
             return 0
         fi
