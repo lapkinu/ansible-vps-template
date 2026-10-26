@@ -204,8 +204,9 @@ deployment_app_name: example-app
 # Becomes the deployment command: /usr/local/sbin/deploy-example-app
 
 deployment_registry_username: username
-deployment_image_repository: ghcr.io/username/example-app
+deployment_image_repository: ghcr.io/{{ deployment_registry_username }}/{{ deployment_app_name }}
 # Must point to the same GHCR repository published by the application CI.
+# Usually derived from the two values above.
 
 deployment_main_server_name: example.com
 # Public hostname. In pre-launch mode this serves the landing page.
@@ -234,8 +235,9 @@ Generate the required values:
 
 **1. GHCR token (`vault_ghcr_token`)**
 
-A GitHub token (classic or fine-grained) with `read:packages` permission.  
-Required to pull private images from GitHub Container Registry.
+A GitHub token (classic or fine-grained) with **only** the `read:packages` permission.  
+Required to pull private images from GitHub Container Registry.  
+No other scopes are needed.
 
 **2. Application secret (`vault_app_secret`)**
 
@@ -344,6 +346,9 @@ Location: Settings → Secrets and variables → Actions → Variables.
 
 While this variable is missing or not exactly `true`, the deployment job is skipped.  
 This allows the application repository to build and publish images without permission to deploy them.
+
+After the variable and the `production` Environment are configured, open the latest (or the initial) workflow run and re-run the **Deploy production** job.  
+This triggers the first real deployment to the VPS.
 
 ---
 
