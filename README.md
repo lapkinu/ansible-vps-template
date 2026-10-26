@@ -204,6 +204,9 @@ deployment_app_name: example-app
 # Becomes the deployment command: /usr/local/sbin/deploy-example-app
 
 deployment_registry_username: username
+# GitHub username or organization that owns the container package.
+# Used together with deployment_app_name to form the image repository.
+
 deployment_image_repository: ghcr.io/{{ deployment_registry_username }}/{{ deployment_app_name }}
 # Must point to the same GHCR repository published by the application CI.
 # Usually derived from the two values above.
@@ -215,6 +218,7 @@ deployment_server_name: dev.example.com
 # Application hostname. In pre-launch mode this is protected by Basic Auth.
 
 deployment_basic_auth_username: dev
+# Username for HTTP Basic Authentication in pre-launch mode.
 ```
 
 ### 5. Configure secrets
