@@ -7,7 +7,8 @@ deploy_ci_ssh_public_key: "{{ lookup('file', deploy_ci_ssh_public_key_path) }}"
 
 deployment_app_name: # example-app
 deployment_registry_username: # username
-deployment_image_repository: # ghcr.io/username/example-app
+
+deployment_image_repository: ghcr.io/{{ deployment_registry_username }}/{{ deployment_app_name }}
 
 deployment_main_server_name: # example.com
 deployment_server_name: # dev.example.com

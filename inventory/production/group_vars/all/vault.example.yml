@@ -1,5 +1,5 @@
 ---
-vault_ghcr_token:
-vault_app_secret:
-vault_basic_auth_password_hash:
-vault_caddy_mercure_jwt_secret:
+vault_ghcr_token: ""
+vault_app_secret: ""
+vault_caddy_mercure_jwt_secret: ""
+vault_basic_auth_password_hash: ""
