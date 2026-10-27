@@ -74,6 +74,41 @@ find_current_container() {
         | /usr/bin/head --lines=1
 }
 
+cleanup_old_images() {
+    local image_tags
+    local candidate
+    local tag
+
+    echo "Cleaning up old application images..."
+
+    if ! image_tags="$("${DOCKER}" image ls --format '{{ "{{.Repository}}:{{.Tag}}" }}')"; then
+        echo "Warning: could not list Docker images; skipping cleanup." >&2
+        return 0
+    fi
+
+    while IFS= read -r candidate; do
+        [[ "${candidate}" == "${IMAGE_REPOSITORY}:"* ]] || continue
+
+        tag="${candidate#"${IMAGE_REPOSITORY}:"}"
+
+        # Only remove immutable, full-length commit SHA tags.
+        [[ "${tag}" =~ ^[0-9a-f]{40}$ ]] || continue
+
+        # Keep the deployed image and the previous release for rollback.
+        [[ "${candidate}" == "${IMAGE}" ]] && continue
+        [[ -n "${PREVIOUS_IMAGE}" && "${candidate}" == "${PREVIOUS_IMAGE}" ]] && continue
+
+        echo "Removing old application image: ${candidate}"
+
+        if ! "${DOCKER}" image rm "${candidate}"; then
+            echo "Warning: could not remove image ${candidate}; continuing cleanup." >&2
+        fi
+    done <<< "${image_tags}"
+
+    echo "Old application image cleanup finished."
+    return 0
+}
+
 rollback() {
     local previous_image="$1"
 
@@ -201,6 +236,9 @@ echo "Waiting for application health check..."
 if healthcheck; then
     echo "Application is healthy: ${HEALTHCHECK_URL}"
     echo "Deployment completed: ${COMMIT_SHA}"
+
+    cleanup_old_images
+
     exit 0
 fi
 
